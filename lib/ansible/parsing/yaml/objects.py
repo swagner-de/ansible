@@ -19,10 +19,11 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+import sys
 import yaml
 
 from ansible.module_utils.six import text_type
-from ansible.module_utils._text import to_bytes, to_text
+from ansible.module_utils._text import to_bytes, to_text, to_native
 
 
 class AnsibleBaseYAMLObject(object):
@@ -53,7 +54,17 @@ class AnsibleBaseYAMLObject(object):
     ansible_pos = property(_get_ansible_position, _set_ansible_position)
 
 
-class AnsibleMapping(AnsibleBaseYAMLObject, dict):
+# try to always use orderddict with yaml, after py3.6 the dict type already does this
+odict = dict
+if sys.version_info[:2] < (3, 7):
+    # if python 2.7 or py3 < 3.7
+    try:
+        from collections import OrderedDict as odict
+    except ImportError:
+        pass
+
+
+class AnsibleMapping(AnsibleBaseYAMLObject, odict):
     ''' sub class for dictionaries '''
     pass
 
@@ -128,7 +139,7 @@ class AnsibleVaultEncryptedUnicode(yaml.YAMLObject, AnsibleBaseYAMLObject):
         return True
 
     def __str__(self):
-        return str(self.data)
+        return to_native(self.data, errors='surrogate_or_strict')
 
     def __unicode__(self):
         return to_text(self.data, errors='surrogate_or_strict')

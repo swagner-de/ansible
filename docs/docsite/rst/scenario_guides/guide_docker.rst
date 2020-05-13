@@ -1,5 +1,5 @@
-Getting Started with Docker
-===========================
+Docker Guide
+============
 
 Ansible offers the following modules for orchestrating Docker containers:
 
@@ -14,8 +14,8 @@ Ansible offers the following modules for orchestrating Docker containers:
     docker_image
         Provides full control over images, including: build, pull, push, tag and remove.
 
-    docker_image_facts
-        Inspects one or more images in the Docker host's image cache, providing the information as facts for making
+    docker_image_info
+        Inspects one or more images in the Docker host's image cache, providing the information for making
         decision or assertions in a playbook.
 
     docker_login
@@ -30,12 +30,12 @@ Ansible 2.1.0 includes major updates to the Docker modules, marking the start of
 integrated set of tools for orchestrating containers. In addition to the above modules, we are also working on the
 following:
 
-Still using Dockerfile to build images? Check out `ansible-container <https://github.com/ansible/ansible-container>`_,
+Still using Dockerfile to build images? Check out `ansible-bender <https://github.com/ansible-community/ansible-bender>`_,
 and start building images from your Ansible playbooks.
 
-Use the *shipit* command in `ansible-container <https://github.com/ansible/ansible-container>`_
+Use `Ansible Operator <https://learn.openshift.com/ansibleop/ansible-operator-overview/>`_
 to launch your docker-compose file on `OpenShift <https://www.okd.io/>`_. Go from an app on your laptop to a fully
-scalable app in the cloud in just a few moments.
+scalable app in the cloud with Kubernetes in just a few moments.
 
 There's more planned. See the latest ideas and thinking at the `Ansible proposal repo <https://github.com/ansible/proposals/tree/master/docker>`_.
 
@@ -190,7 +190,7 @@ examples to get you started:
     DOCKER_DEFAULT_IP=192.0.2.5 ./docker.py --pretty
 
     # Run as input to a playbook:
-    ansible-playbook -i ~/projects/ansible/contrib/inventory/docker.py docker_inventory_test.yml
+    ansible-playbook -i ./docker.py docker_inventory_test.yml
 
     # Simple playbook to invoke with the above example:
 
@@ -198,12 +198,13 @@ examples to get you started:
           hosts: all
           gather_facts: no
           tasks:
-            - debug: msg="Container - {{ inventory_hostname }}"
+            - debug:
+                msg: "Container - {{ inventory_hostname }}"
 
 Configuration
 .............
 You can control the behavior of the inventory script by defining environment variables, or
-creating a docker.yml file (sample provided in ansible/contrib/inventory). The order of precedence is the docker.yml
+creating a docker.yml file (sample provided in https://raw.githubusercontent.com/ansible-collections/community.general/master/scripts/inventory/docker.py). The order of precedence is the docker.yml
 file and then environment variables.
 
 
@@ -327,7 +328,3 @@ For the default host and each host in the hosts list define the following attrib
      description: The port containers use for SSH
      required: false
      default: 22
-
-
-
-

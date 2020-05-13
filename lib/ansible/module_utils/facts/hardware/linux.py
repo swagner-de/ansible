@@ -30,7 +30,7 @@ from multiprocessing.pool import ThreadPool
 
 from ansible.module_utils._text import to_text
 from ansible.module_utils.six import iteritems
-from ansible.module_utils.basic import bytes_to_human
+from ansible.module_utils.common.text.formatters import bytes_to_human
 from ansible.module_utils.facts.hardware.base import Hardware, HardwareCollector
 from ansible.module_utils.facts.utils import get_file_content, get_file_lines, get_mount_size
 
@@ -78,6 +78,9 @@ class LinuxHardware(Hardware):
 
     # regex used against mtab content to find entries that are bind mounts
     MTAB_BIND_MOUNT_RE = re.compile(r'.*bind.*"')
+
+    # regex used for replacing octal escape sequences
+    OCTAL_ESCAPE_RE = re.compile(r'\\[0-9]{3}')
 
     def populate(self, collected_facts=None):
         hardware_facts = {}
@@ -187,13 +190,18 @@ class LinuxHardware(Hardware):
             data = line.split(":", 1)
             key = data[0].strip()
 
+            try:
+                val = data[1].strip()
+            except IndexError:
+                val = ""
+
             if xen:
                 if key == 'flags':
                     # Check for vme cpu flag, Xen paravirt does not expose this.
                     #   Need to detect Xen paravirt because it exposes cpuinfo
                     #   differently than Xen HVM or KVM and causes reporting of
                     #   only a single cpu core.
-                    if 'vme' not in data:
+                    if 'vme' not in val:
                         xen_paravirt = True
 
             # model name is for Intel arch, Processor (mind the uppercase P)
@@ -202,7 +210,7 @@ class LinuxHardware(Hardware):
             if key in ['model name', 'Processor', 'vendor_id', 'cpu', 'Vendor', 'processor']:
                 if 'processor' not in cpu_facts:
                     cpu_facts['processor'] = []
-                cpu_facts['processor'].append(data[1].strip())
+                cpu_facts['processor'].append(val)
                 if key == 'vendor_id':
                     vendor_id_occurrence += 1
                 if key == 'model name':
@@ -211,21 +219,21 @@ class LinuxHardware(Hardware):
                     processor_occurence += 1
                 i += 1
             elif key == 'physical id':
-                physid = data[1].strip()
+                physid = val
                 if physid not in sockets:
                     sockets[physid] = 1
             elif key == 'core id':
-                coreid = data[1].strip()
+                coreid = val
                 if coreid not in sockets:
                     cores[coreid] = 1
             elif key == 'cpu cores':
-                sockets[physid] = int(data[1].strip())
+                sockets[physid] = int(val)
             elif key == 'siblings':
-                cores[coreid] = int(data[1].strip())
+                cores[coreid] = int(val)
             elif key == '# processors':
-                cpu_facts['processor_cores'] = int(data[1].strip())
+                cpu_facts['processor_cores'] = int(val)
             elif key == 'ncpus active':
-                i = int(data[1].strip())
+                i = int(val)
 
         # Skip for platforms without vendor_id/model_name in cpuinfo (e.g ppc64le)
         if vendor_id_occurrence > 0:
@@ -234,8 +242,9 @@ class LinuxHardware(Hardware):
 
         # The fields for ARM CPUs do not always include 'vendor_id' or 'model name',
         # and sometimes includes both 'processor' and 'Processor'.
-        # Always use 'processor' count for ARM systems
-        if collected_facts.get('ansible_architecture').startswith(('armv', 'aarch')):
+        # The fields for Power CPUs include 'processor' and 'cpu'.
+        # Always use 'processor' count for ARM and Power systems
+        if collected_facts.get('ansible_architecture', '').startswith(('armv', 'aarch', 'ppc')):
             i = processor_occurence
 
         # FIXME
@@ -293,13 +302,23 @@ class LinuxHardware(Hardware):
 
             DMI_DICT = {
                 'bios_date': '/sys/devices/virtual/dmi/id/bios_date',
+                'bios_vendor': '/sys/devices/virtual/dmi/id/bios_vendor',
                 'bios_version': '/sys/devices/virtual/dmi/id/bios_version',
+                'board_asset_tag': '/sys/devices/virtual/dmi/id/board_asset_tag',
+                'board_name': '/sys/devices/virtual/dmi/id/board_name',
+                'board_serial': '/sys/devices/virtual/dmi/id/board_serial',
+                'board_vendor': '/sys/devices/virtual/dmi/id/board_vendor',
+                'board_version': '/sys/devices/virtual/dmi/id/board_version',
+                'chassis_asset_tag': '/sys/devices/virtual/dmi/id/chassis_asset_tag',
+                'chassis_serial': '/sys/devices/virtual/dmi/id/chassis_serial',
+                'chassis_vendor': '/sys/devices/virtual/dmi/id/chassis_vendor',
+                'chassis_version': '/sys/devices/virtual/dmi/id/chassis_version',
                 'form_factor': '/sys/devices/virtual/dmi/id/chassis_type',
                 'product_name': '/sys/devices/virtual/dmi/id/product_name',
                 'product_serial': '/sys/devices/virtual/dmi/id/product_serial',
                 'product_uuid': '/sys/devices/virtual/dmi/id/product_uuid',
                 'product_version': '/sys/devices/virtual/dmi/id/product_version',
-                'system_vendor': '/sys/devices/virtual/dmi/id/sys_vendor'
+                'system_vendor': '/sys/devices/virtual/dmi/id/sys_vendor',
             }
 
             for (key, path) in DMI_DICT.items():
@@ -320,13 +339,23 @@ class LinuxHardware(Hardware):
             dmi_bin = self.module.get_bin_path('dmidecode')
             DMI_DICT = {
                 'bios_date': 'bios-release-date',
+                'bios_vendor': 'bios-vendor',
                 'bios_version': 'bios-version',
+                'board_asset_tag': 'baseboard-asset-tag',
+                'board_name': 'baseboard-product-name',
+                'board_serial': 'baseboard-serial-number',
+                'board_vendor': 'baseboard-manufacturer',
+                'board_version': 'baseboard-version',
+                'chassis_asset_tag': 'chassis-asset-tag',
+                'chassis_serial': 'chassis-serial-number',
+                'chassis_vendor': 'chassis-manufacturer',
+                'chassis_version': 'chassis-version',
                 'form_factor': 'chassis-type',
                 'product_name': 'system-product-name',
                 'product_serial': 'system-serial-number',
                 'product_uuid': 'system-uuid',
                 'product_version': 'system-version',
-                'system_vendor': 'system-manufacturer'
+                'system_vendor': 'system-manufacturer',
             }
             for (k, v) in DMI_DICT.items():
                 if dmi_bin is not None:
@@ -455,6 +484,14 @@ class LinuxHardware(Hardware):
             mtab_entries.append(fields)
         return mtab_entries
 
+    @staticmethod
+    def _replace_octal_escapes_helper(match):
+        # Convert to integer using base8 and then convert to character
+        return chr(int(match.group()[1:], 8))
+
+    def _replace_octal_escapes(self, value):
+        return self.OCTAL_ESCAPE_RE.sub(self._replace_octal_escapes_helper, value)
+
     def get_mount_info(self, mount, device, uuids):
 
         mount_size = get_mount_size(mount)
@@ -480,6 +517,8 @@ class LinuxHardware(Hardware):
         pool = ThreadPool(processes=min(len(mtab_entries), cpu_count()))
         maxtime = globals().get('GATHER_TIMEOUT') or timeout.DEFAULT_GATHER_TIMEOUT
         for fields in mtab_entries:
+            # Transform octal escape sequences
+            fields = [self._replace_octal_escapes(field) for field in fields]
 
             device, mount, fstype, options = fields[0], fields[1], fields[2], fields[3]
 

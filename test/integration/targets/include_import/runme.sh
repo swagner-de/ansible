@@ -10,6 +10,10 @@ function gen_task_files() {
     done
 }
 
+## Adhoc
+
+ansible -m include_role -a name=role1 localhost
+
 ## Import (static)
 
 # Playbook
@@ -38,6 +42,9 @@ ANSIBLE_STRATEGY='free' ansible-playbook tasks/test_include_tasks_tags.yml -i in
 ANSIBLE_STRATEGY='linear' ansible-playbook role/test_include_role.yml -i inventory "$@"
 ANSIBLE_STRATEGY='free' ansible-playbook role/test_include_role.yml -i inventory "$@"
 
+# https://github.com/ansible/ansible/issues/68515
+ansible-playbook -v role/test_include_role_vars_from.yml 2>&1 | tee test_include_role_vars_from.out
+test "$(grep -E -c 'Expected a string for vars_from but got' test_include_role_vars_from.out)" = 1
 
 ## Max Recursion Depth
 # https://github.com/ansible/ansible/issues/23609
@@ -85,12 +92,25 @@ ansible-playbook public_exposure/no_bleeding.yml -i inventory "$@"
 ansible-playbook public_exposure/no_overwrite_roles.yml -i inventory "$@"
 
 # https://github.com/ansible/ansible/pull/48068
-ansible-playbook run_once/playbook.yml "$@"
+ANSIBLE_HOST_PATTERN_MISMATCH=warning ansible-playbook run_once/playbook.yml "$@"
 
 # https://github.com/ansible/ansible/issues/48936
 ansible-playbook -v handler_addressing/playbook.yml 2>&1 | tee test_handler_addressing.out
-test "$(egrep -c 'include handler task|ERROR! The requested handler '"'"'do_import'"'"' was not found' test_handler_addressing.out)" = 2
+test "$(grep -E -c 'include handler task|ERROR! The requested handler '"'"'do_import'"'"' was not found' test_handler_addressing.out)" = 2
 
 # https://github.com/ansible/ansible/issues/49969
 ansible-playbook -v parent_templating/playbook.yml 2>&1 | tee test_parent_templating.out
-test "$(egrep -c 'Templating the path of the parent include_tasks failed.' test_parent_templating.out)" = 0
+test "$(grep -E -c 'Templating the path of the parent include_tasks failed.' test_parent_templating.out)" = 0
+
+# https://github.com/ansible/ansible/issues/54618
+ansible-playbook test_loop_var_bleed.yaml "$@"
+
+# https://github.com/ansible/ansible/issues/56580
+ansible-playbook valid_include_keywords/playbook.yml "$@"
+
+# https://github.com/ansible/ansible/issues/64902
+ansible-playbook tasks/test_allow_single_role_dup.yml 2>&1 | tee test_allow_single_role_dup.out
+test "$(grep -c 'ok=3' test_allow_single_role_dup.out)" = 1
+
+# https://github.com/ansible/ansible/issues/66764
+ANSIBLE_HOST_PATTERN_MISMATCH=error ansible-playbook empty_group_warning/playbook.yml

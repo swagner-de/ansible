@@ -272,6 +272,16 @@ options:
       - Possible states are C(INVALID), C(NEW), C(ESTABLISHED), C(RELATED), C(UNTRACKED), C(SNAT), C(DNAT)
     type: list
     default: []
+  src_range:
+    description:
+      - Specifies the source IP range to match in the iprange module.
+    type: str
+    version_added: "2.8"
+  dst_range:
+    description:
+      - Specifies the destination IP range to match in the iprange module.
+    type: str
+    version_added: "2.8"
   limit:
     description:
       - Specifies the maximum average number of matches to allow per second.
@@ -291,6 +301,11 @@ options:
         the rule to apply instead to all users except that one specified.
     type: str
     version_added: "2.1"
+  gid_owner:
+    description:
+      - Specifies the GID or group to use in match by owner rule.
+    type: str
+    version_added: "2.9"
   reject_with:
     description:
       - 'Specifies the error packet type to return while rejecting. It implies
@@ -320,6 +335,12 @@ options:
     type: str
     choices: [ ACCEPT, DROP, QUEUE, RETURN ]
     version_added: "2.2"
+  wait:
+    description:
+      - Wait N seconds for the xtables lock to prevent multiple instances of
+        the program from running concurrently.
+    type: str
+    version_added: "2.10"
 '''
 
 EXAMPLES = r'''
@@ -360,6 +381,13 @@ EXAMPLES = r'''
     jump: ACCEPT
     comment: Accept new SSH connections.
 
+- name: Match on IP ranges
+  iptables:
+    chain: FORWARD
+    src_range: 192.168.1.100-192.168.1.199
+    dst_range: 10.0.0.1-10.0.0.50
+    jump: ACCEPT
+
 - name: Tag all outbound tcp packets with DSCP mark 8
   iptables:
     chain: OUTPUT
@@ -382,6 +410,7 @@ EXAMPLES = r'''
     protocol: tcp
     destination_port: 8080
     jump: ACCEPT
+    action: insert
     rule_num: 5
 
 - name: Set the policy for the INPUT chain to DROP
@@ -435,8 +464,14 @@ EXAMPLES = r'''
 
 import re
 
+from distutils.version import LooseVersion
+
 from ansible.module_utils.basic import AnsibleModule
 
+
+IPTABLES_WAIT_SUPPORT_ADDED = '1.4.20'
+
+IPTABLES_WAIT_WITH_SECONDS_SUPPORT_ADDED = '1.6.0'
 
 BINS = dict(
     ipv4='iptables',
@@ -489,8 +524,14 @@ def append_jump(rule, param, jump):
         rule.extend(['-j', jump])
 
 
+def append_wait(rule, param, flag):
+    if param:
+        rule.extend([flag, param])
+
+
 def construct_rule(params):
     rule = []
+    append_wait(rule, params['wait'], '-w')
     append_param(rule, params['protocol'], '-p', False)
     append_param(rule, params['source'], '-s', False)
     append_param(rule, params['destination'], '-d', False)
@@ -527,12 +568,22 @@ def construct_rule(params):
     elif params['ctstate']:
         append_match(rule, params['ctstate'], 'conntrack')
         append_csv(rule, params['ctstate'], '--ctstate')
+    if 'iprange' in params['match']:
+        append_param(rule, params['src_range'], '--src-range', False)
+        append_param(rule, params['dst_range'], '--dst-range', False)
+    elif params['src_range'] or params['dst_range']:
+        append_match(rule, params['src_range'] or params['dst_range'], 'iprange')
+        append_param(rule, params['src_range'], '--src-range', False)
+        append_param(rule, params['dst_range'], '--dst-range', False)
     append_match(rule, params['limit'] or params['limit_burst'], 'limit')
     append_param(rule, params['limit'], '--limit', False)
     append_param(rule, params['limit_burst'], '--limit-burst', False)
     append_match(rule, params['uid_owner'], 'owner')
     append_match_flag(rule, params['uid_owner'], '--uid-owner', True)
     append_param(rule, params['uid_owner'], '--uid-owner', False)
+    append_match(rule, params['gid_owner'], 'owner')
+    append_match_flag(rule, params['gid_owner'], '--gid-owner', True)
+    append_param(rule, params['gid_owner'], '--gid-owner', False)
     if params['jump'] is None:
         append_jump(rule, params['reject_with'], 'REJECT')
     append_param(rule, params['reject_with'], '--reject-with', False)
@@ -597,6 +648,12 @@ def get_chain_policy(iptables_path, module, params):
     return None
 
 
+def get_iptables_version(iptables_path, module):
+    cmd = [iptables_path, '--version']
+    rc, out, _ = module.run_command(cmd, check_rc=True)
+    return out.split('v')[1].rstrip('\n')
+
+
 def main():
     module = AnsibleModule(
         supports_check_mode=True,
@@ -608,6 +665,7 @@ def main():
             chain=dict(type='str'),
             rule_num=dict(type='str'),
             protocol=dict(type='str'),
+            wait=dict(type='str'),
             source=dict(type='str'),
             to_source=dict(type='str'),
             destination=dict(type='str'),
@@ -639,9 +697,12 @@ def main():
             set_dscp_mark_class=dict(type='str'),
             comment=dict(type='str'),
             ctstate=dict(type='list', default=[]),
+            src_range=dict(type='str'),
+            dst_range=dict(type='str'),
             limit=dict(type='str'),
             limit_burst=dict(type='str'),
             uid_owner=dict(type='str'),
+            gid_owner=dict(type='str'),
             reject_with=dict(type='str'),
             icmp_type=dict(type='str'),
             syn=dict(type='str', default='ignore', choices=['ignore', 'match', 'negate']),
@@ -680,6 +741,15 @@ def main():
             module.params['jump'] = 'LOG'
         elif module.params['jump'] != 'LOG':
             module.fail_json(msg="Logging options can only be used with the LOG jump target.")
+
+    # Check if wait option is supported
+    iptables_version = LooseVersion(get_iptables_version(iptables_path, module))
+
+    if iptables_version >= LooseVersion(IPTABLES_WAIT_SUPPORT_ADDED):
+        if iptables_version < LooseVersion(IPTABLES_WAIT_WITH_SECONDS_SUPPORT_ADDED):
+            module.params['wait'] = ''
+    else:
+        module.params['wait'] = None
 
     # Flush the table
     if args['flush'] is True:

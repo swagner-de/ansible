@@ -26,7 +26,6 @@ class VirtualSysctlDetectionMixin(object):
     def detect_virt_product(self, key):
         virtual_product_facts = {}
         self.detect_sysctl()
-        # FIXME: exit early on falsey self.sysctl_path and unindent
         if self.sysctl_path:
             rc, out, err = self.module.run_command("%s -n %s" % (self.sysctl_path, key))
             if rc == 0:
@@ -48,13 +47,15 @@ class VirtualSysctlDetectionMixin(object):
                 elif out.rstrip() == 'RHEV Hypervisor':
                     virtual_product_facts['virtualization_type'] = 'RHEV'
                     virtual_product_facts['virtualization_role'] = 'guest'
+                elif (key == 'security.jail.jailed') and (out.rstrip() == '1'):
+                    virtual_product_facts['virtualization_type'] = 'jails'
+                    virtual_product_facts['virtualization_role'] = 'guest'
 
         return virtual_product_facts
 
     def detect_virt_vendor(self, key):
         virtual_vendor_facts = {}
         self.detect_sysctl()
-        # FIXME: exit early on falsey self.sysctl_path and unindent
         if self.sysctl_path:
             rc, out, err = self.module.run_command("%s -n %s" % (self.sysctl_path, key))
             if rc == 0:

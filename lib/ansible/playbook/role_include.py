@@ -27,6 +27,7 @@ from ansible.playbook.task_include import TaskInclude
 from ansible.playbook.role import Role
 from ansible.playbook.role.include import RoleInclude
 from ansible.utils.display import Display
+from ansible.module_utils.six import string_types
 
 __all__ = ['IncludeRole']
 
@@ -73,7 +74,7 @@ class IncludeRole(TaskInclude):
         else:
             myplay = play
 
-        ri = RoleInclude.load(self._role_name, play=myplay, variable_manager=variable_manager, loader=loader)
+        ri = RoleInclude.load(self._role_name, play=myplay, variable_manager=variable_manager, loader=loader, collection_list=self.collections)
         ri.vars.update(self.vars)
 
         # build role
@@ -97,9 +98,14 @@ class IncludeRole(TaskInclude):
 
         p_block = self.build_parent_block()
 
+        # collections value is not inherited; override with the value we calculated during role setup
+        p_block.collections = actual_role.collections
+
         blocks = actual_role.compile(play=myplay, dep_chain=dep_chain)
         for b in blocks:
             b._parent = p_block
+            # HACK: parent inheritance doesn't seem to have a way to handle this intermediate override until squashed/finalized
+            b.collections = actual_role.collections
 
         # updated available handlers in play
         handlers = actual_role.get_handler_blocks(play=myplay)
@@ -132,7 +138,10 @@ class IncludeRole(TaskInclude):
         # build options for role includes
         for key in my_arg_names.intersection(IncludeRole.FROM_ARGS):
             from_key = key.replace('_from', '')
-            ir._from_files[from_key] = basename(ir.args.get(key))
+            args_value = ir.args.get(key)
+            if not isinstance(args_value, string_types):
+                raise AnsibleParserError('Expected a string for %s but got %s instead' % (key, type(args_value)))
+            ir._from_files[from_key] = basename(args_value)
 
         apply_attrs = ir.args.get('apply', {})
         if apply_attrs and ir.action != 'include_role':
@@ -161,4 +170,6 @@ class IncludeRole(TaskInclude):
         v = super(IncludeRole, self).get_include_params()
         if self._parent_role:
             v.update(self._parent_role.get_role_params())
+            v.setdefault('ansible_parent_role_names', []).insert(0, self._parent_role.get_name())
+            v.setdefault('ansible_parent_role_paths', []).insert(0, self._parent_role._role_path)
         return v

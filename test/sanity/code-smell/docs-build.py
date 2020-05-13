@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+from __future__ import (absolute_import, division, print_function)
+__metaclass__ = type
 
 import os
 import re
@@ -111,6 +113,7 @@ def simplify_stdout(value):
             notice += ' (%d previous rendering line(s) omitted)' % (len(rendering) - 1)
 
         keep.append(notice)
+        # Could change to rendering.clear() if we do not support python2
         rendering[:] = []
 
     for line in lines:

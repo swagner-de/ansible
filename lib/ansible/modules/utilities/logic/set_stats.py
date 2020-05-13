@@ -9,7 +9,7 @@ __metaclass__ = type
 
 ANSIBLE_METADATA = {'metadata_version': '1.1',
                     'status': ['preview'],
-                    'supported_by': 'community'}
+                    'supported_by': 'core'}
 
 DOCUMENTATION = r'''
 ---
@@ -46,6 +46,7 @@ EXAMPLES = r'''
 - set_stats:
     data:
       packages_installed: 31
+    per_host: yes
 
 # Aggregating random stats for all hosts using complex arguments
 - set_stats:

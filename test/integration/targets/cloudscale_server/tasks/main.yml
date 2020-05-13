@@ -1,7 +1,0 @@
----
-- block:
-    - import_tasks: tests.yml
-  always:
-    - import_role:
-        name: cloudscale_common
-        tasks_from: cleanup_servers

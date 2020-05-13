@@ -11,7 +11,7 @@ __metaclass__ = type
 
 ANSIBLE_METADATA = {'metadata_version': '1.1',
                     'status': ['preview'],
-                    'supported_by': 'community'}
+                    'supported_by': 'core'}
 
 DOCUMENTATION = '''
 ---
@@ -67,7 +67,7 @@ ansible_facts:
         status:
           description: State of the service. Either C(enabled), C(disabled), or C(unknown).
           returned: systemd systems or RedHat/SUSE flavored sysvinit/upstart
-          type: string
+          type: str
           sample: enabled
         name:
           description: Name of the service.
@@ -212,9 +212,10 @@ class SystemctlScanService(BaseService):
             services[service_name] = {"name": service_name, "state": state_val, "status": "unknown", "source": "systemd"}
         rc, stdout, stderr = self.module.run_command("%s list-unit-files --no-pager --type service --all" % systemctl_path, use_unsafe_shell=True)
         for line in [svc_line for svc_line in stdout.split('\n') if '.service' in svc_line and 'not-found' not in svc_line]:
+            # there is one more column (VENDOR PRESET) from `systemctl list-unit-files` for systemd >= 245
             try:
-                service_name, status_val = line.split()
-            except ValueError:
+                service_name, status_val = line.split()[:2]
+            except IndexError:
                 self.module.fail_json(msg="Malformed output discovered from systemd list-unit-files: {0}".format(line))
             if service_name not in services:
                 services[service_name] = {"name": service_name, "state": "unknown", "status": status_val, "source": "systemd"}
